@@ -8,9 +8,6 @@ import {
 	IHttpRequestOptions,
 	ILoadOptionsFunctions,
 	INodePropertyOptions,
-	ICredentialTestFunctions,
-	ICredentialsDecrypted,
-	INodeCredentialTestResult,
 } from 'n8n-workflow';
 import * as crypto from "crypto";
 
@@ -323,7 +320,6 @@ export class Reftab implements INodeType {
       {
         name: "reftabApi",
         required: true,
-        testedBy: 'reftabApiTest',
       },
     ],
     properties: [
@@ -1905,63 +1901,6 @@ export class Reftab implements INodeType {
   };
 
   methods = {
-    credentialTest: {
-      async reftabApiTest(
-        this: ICredentialTestFunctions,
-        credential: ICredentialsDecrypted,
-      ): Promise<INodeCredentialTestResult> {
-        const credentials = credential.data as IDataObject;
-        const publicKey = credentials.publicKey as string;
-        const secretKey = credentials.secretKey as string;
-  
-        if (!publicKey || !secretKey) {
-          return {
-            status: 'Error',
-            message: 'Public Key and Secret Key are required',
-          };
-        }
-  
-        try {
-          const url = 'https://www.reftab.com/api/locations';
-          const method = 'GET';
-          const now = new Date().toUTCString();
-  
-          const signatureString = `${method}\n\n\n${now}\n${url}`;
-          const hmac = crypto.createHmac('sha256', secretKey);
-          hmac.update(signatureString);
-          const hexDigest = hmac.digest('hex');
-          const signature = Buffer.from(hexDigest).toString('base64');
-  
-          const response = await this.helpers.request({
-            method: 'GET',
-            url,
-            headers: {
-              'Authorization': `RT ${publicKey}:${signature}`,
-              'x-rt-date': now,
-            },
-            json: true,
-          });
-  
-          if (response) {
-            return {
-              status: 'OK',
-              message: 'Connection successful',
-            };
-          }
-  
-          return {
-            status: 'Error',
-            message: 'Unknown error occurred',
-          };
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-          return {
-            status: 'Error',
-            message: `Connection failed: ${errorMessage}`,
-          };
-        }
-      },
-    },
     loadOptions: {
       async getLocations(
         this: ILoadOptionsFunctions,
