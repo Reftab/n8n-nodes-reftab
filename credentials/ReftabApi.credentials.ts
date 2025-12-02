@@ -41,7 +41,9 @@ export class ReftabApi implements ICredentialType {
 		const secretKey = credentials.secretKey as string;
 		const now = new Date().toUTCString();
 		const method = requestOptions.method || 'GET';
-		const url = requestOptions.url as string;
+		const baseURL = requestOptions.baseURL || 'https://www.reftab.com/api';
+    const urlPath = requestOptions.url as string;
+    const url = urlPath.startsWith('http') ? urlPath : `${baseURL}${urlPath}`;
 
 		let contentMD5 = '';
 		let contentType = '';

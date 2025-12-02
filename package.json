@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-reftab",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "n8n node for Reftab Asset Management API",
   "keywords": [
     "n8n-community-node-package",
