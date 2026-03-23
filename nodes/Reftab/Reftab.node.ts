@@ -138,7 +138,8 @@ async function makeReftabRequest(
         );
       }
 
-      throw new Error(
+      throw new NodeOperationError(
+        context.getNode(),
         `Reftab API Error (${fullResponse.statusCode}): ${errorMessage || "Request failed"}`,
       );
     }
@@ -165,7 +166,7 @@ async function makeReftabRequest(
     // Handle unexpected errors
     const anyError = error as Record<string, unknown>;
     const message = anyError.message || "Unknown error occurred";
-    throw new Error(`Reftab API Error: ${message}`);
+    throw new NodeOperationError(context.getNode(), `Reftab API Error: ${message}`);
   }
 }
 
@@ -256,7 +257,7 @@ async function lookupLoaneeByEmail(
     }
   }
 
-  throw new Error(`Loanee with email "${email}" not found`);
+  throw new NodeOperationError(context.getNode(), `Loanee with email "${email}" not found`);
 }
 
 /**
@@ -297,7 +298,8 @@ async function lookupUserByEmail(
     }
   }
 
-  throw new Error(
+  throw new NodeOperationError(
+    context.getNode(),
     `User with email "${email}" not found. Note: Only Reftab users (not external loanees) can be assigned to maintenance.`,
   );
 }
@@ -2157,7 +2159,7 @@ export class Reftab implements INodeType {
               "GET",
               `assets/${assetId}`,
             );
-            returnData.push({ json: responseData as IDataObject });
+            returnData.push({ json: responseData as IDataObject, pairedItem: { item: i } });
           } else if (operation === "getAll") {
             const limit = this.getNodeParameter("limit", i) as number;
             const additionalParams = this.getNodeParameter(
@@ -2238,7 +2240,7 @@ export class Reftab implements INodeType {
               : [responseData];
 
             for (const asset of assets) {
-              returnData.push({ json: asset as IDataObject });
+              returnData.push({ json: asset as IDataObject, pairedItem: { item: i } });
             }
           } else if (operation === "create") {
             const location = this.getNodeParameter("location", i) as string;
@@ -2285,7 +2287,7 @@ export class Reftab implements INodeType {
               "assets",
               body,
             );
-            returnData.push({ json: responseData as IDataObject });
+            returnData.push({ json: responseData as IDataObject, pairedItem: { item: i } });
           } else if (operation === "update") {
             const assetId = this.getNodeParameter("assetId", i) as string;
             const assetDataString = this.getNodeParameter(
@@ -2308,7 +2310,7 @@ export class Reftab implements INodeType {
               `assets/${assetId}`,
               updates,
             );
-            returnData.push({ json: responseData as IDataObject });
+            returnData.push({ json: responseData as IDataObject, pairedItem: { item: i } });
           } else if (operation === "delete") {
             const assetId = this.getNodeParameter("assetId", i) as string;
             const responseData = await makeReftabRequest(
@@ -2322,6 +2324,7 @@ export class Reftab implements INodeType {
                 id: assetId,
                 ...(responseData as IDataObject),
               },
+              pairedItem: { item: i },
             });
           }
         } else if (resource === "assetMaintenance") {
@@ -2335,7 +2338,7 @@ export class Reftab implements INodeType {
               "GET",
               `assetmaintenance/${maintenanceId}`,
             );
-            returnData.push({ json: responseData as IDataObject });
+            returnData.push({ json: responseData as IDataObject, pairedItem: { item: i } });
           } else if (operation === "getAll") {
             const limit = this.getNodeParameter(
               "maintenanceLimit",
@@ -2429,7 +2432,7 @@ export class Reftab implements INodeType {
               : [maintenances];
 
             for (const maintenance of maintenanceArray) {
-              returnData.push({ json: maintenance as IDataObject });
+              returnData.push({ json: maintenance as IDataObject, pairedItem: { item: i } });
             }
           } else if (operation === "create") {
             const assetId = this.getNodeParameter(
@@ -2488,7 +2491,7 @@ export class Reftab implements INodeType {
               `assets/${assetId}/maintenance`,
               body,
             );
-            returnData.push({ json: responseData as IDataObject });
+            returnData.push({ json: responseData as IDataObject, pairedItem: { item: i } });
           }
         } else if (resource === "loan") {
           if (operation === "get") {
@@ -2498,7 +2501,7 @@ export class Reftab implements INodeType {
               "GET",
               `loans/${loanId}`,
             );
-            returnData.push({ json: responseData as IDataObject });
+            returnData.push({ json: responseData as IDataObject, pairedItem: { item: i } });
           } else if (operation === "getAll") {
             const limit = this.getNodeParameter("loanLimit", i) as number;
             const additionalParams = this.getNodeParameter(
@@ -2639,7 +2642,7 @@ export class Reftab implements INodeType {
             const loanArray = Array.isArray(loans) ? loans : [loans];
 
             for (const loan of loanArray) {
-              returnData.push({ json: loan as IDataObject });
+              returnData.push({ json: loan as IDataObject, pairedItem: { item: i } });
             }
           } else if (operation === "create") {
             const loaneeEmail = this.getNodeParameter(
@@ -2708,7 +2711,7 @@ export class Reftab implements INodeType {
               "loans",
               body,
             );
-            returnData.push({ json: responseData as IDataObject });
+            returnData.push({ json: responseData as IDataObject, pairedItem: { item: i } });
           } else if (operation === "update") {
             const loanId = this.getNodeParameter("loanId", i) as number;
             const updateFields = this.getNodeParameter(
@@ -2737,7 +2740,7 @@ export class Reftab implements INodeType {
               `loans/${loanId}`,
               body,
             );
-            returnData.push({ json: responseData as IDataObject });
+            returnData.push({ json: responseData as IDataObject, pairedItem: { item: i } });
           } else if (operation === "checkIn") {
             const loanId = this.getNodeParameter("loanId", i) as number;
             const checkInLocation = this.getNodeParameter(
@@ -2766,7 +2769,7 @@ export class Reftab implements INodeType {
               `loans/${loanId}`,
               body,
             );
-            returnData.push({ json: responseData as IDataObject });
+            returnData.push({ json: responseData as IDataObject, pairedItem: { item: i } });
           }
         } else if (resource === "reservation") {
           if (operation === "get") {
@@ -2779,7 +2782,7 @@ export class Reftab implements INodeType {
               "GET",
               `reservations/${reservationId}`,
             );
-            returnData.push({ json: responseData as IDataObject });
+            returnData.push({ json: responseData as IDataObject, pairedItem: { item: i } });
           } else if (operation === "getAll") {
             const limit = this.getNodeParameter(
               "reservationLimit",
@@ -2903,7 +2906,7 @@ export class Reftab implements INodeType {
               : [reservations];
 
             for (const reservation of reservationArray) {
-              returnData.push({ json: reservation as IDataObject });
+              returnData.push({ json: reservation as IDataObject, pairedItem: { item: i } });
             }
           } else if (operation === "create") {
             const loaneeEmail = this.getNodeParameter(
@@ -2975,7 +2978,7 @@ export class Reftab implements INodeType {
               "reservations",
               body,
             );
-            returnData.push({ json: responseData as IDataObject });
+            returnData.push({ json: responseData as IDataObject, pairedItem: { item: i } });
           } else if (operation === "update") {
             const reservationId = this.getNodeParameter(
               "reservationId",
@@ -3007,7 +3010,7 @@ export class Reftab implements INodeType {
               `reservations/${reservationId}`,
               body,
             );
-            returnData.push({ json: responseData as IDataObject });
+            returnData.push({ json: responseData as IDataObject, pairedItem: { item: i } });
           } else if (operation === "delete") {
             const reservationId = this.getNodeParameter(
               "reservationId",
@@ -3018,7 +3021,7 @@ export class Reftab implements INodeType {
               "DELETE",
               `reservations/${reservationId}`,
             );
-            returnData.push({ json: responseData as IDataObject });
+            returnData.push({ json: responseData as IDataObject, pairedItem: { item: i } });
           } else if (operation === "fulfill") {
             const reservationId = this.getNodeParameter(
               "reservationId",
@@ -3048,7 +3051,7 @@ export class Reftab implements INodeType {
               `reservations/${reservationId}`,
               body,
             );
-            returnData.push({ json: responseData as IDataObject });
+            returnData.push({ json: responseData as IDataObject, pairedItem: { item: i } });
           }
         } else if (resource === "custom") {
           const method = this.getNodeParameter("method", i) as string;
@@ -3093,7 +3096,7 @@ export class Reftab implements INodeType {
               body,
             );
           }
-          returnData.push({ json: responseData as IDataObject });
+          returnData.push({ json: responseData as IDataObject, pairedItem: { item: i } });
         }
       } catch (error: unknown) {
         if (this.continueOnFail()) {

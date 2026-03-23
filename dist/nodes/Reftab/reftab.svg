@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Square" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 991.02 991.02">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #1aba52;
+      }
+    </style>
+  </defs>
+  <g transform="translate(0, 24.775)">
+    <rect class="cls-1" x="665.61" width="325.41" height="309.14"/>
+    <rect class="cls-1" y="632.32" width="325.41" height="309.15"/>
+    <rect class="cls-1" x="665.61" y="632.32" width="325.41" height="309.15"/>
+    <rect class="cls-1" x="325.41" y="309.14" width="340.2" height="323.2"/>
+  </g>
+</svg>
