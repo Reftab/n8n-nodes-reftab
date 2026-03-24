@@ -10,6 +10,7 @@ import * as crypto from 'crypto';
 export class ReftabApi implements ICredentialType {
 	name = 'reftabApi';
 	displayName = 'Reftab API';
+	icon = 'file:reftab.svg' as const;
 	documentationUrl = 'https://reftab.com/api-docs';
 	properties: INodeProperties[] = [
 		{
@@ -55,7 +56,7 @@ export class ReftabApi implements ICredentialType {
 			const bodyString = typeof requestOptions.body === 'string' 
 				? requestOptions.body 
 				: JSON.stringify(requestOptions.body);
-			contentMD5 = crypto.createHash('md5').update(bodyString).digest('base64');
+			contentMD5 = crypto.createHash('md5').update(bodyString).digest('hex');
 			contentType = 'application/json';
 		}
 

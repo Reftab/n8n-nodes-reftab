@@ -8,51 +8,9 @@ import {
 	IHttpRequestOptions,
 	ILoadOptionsFunctions,
 	INodePropertyOptions,
+	NodeConnectionTypes,
+	IAllExecuteFunctions,
 } from 'n8n-workflow';
-import * as crypto from "crypto";
-
-/**
- * Generate HMAC signature for Reftab API
- *
- * Based on the official Reftab Postman script and verified against CryptoJS behavior:
- * - signatureToSign = METHOD\nContentMD5\nContentType\nDate\nURL
- * - HMAC-SHA256 is computed and the HEX result is then Base64 encoded
- * - This matches: btoa(CryptoJS.HmacSHA256(signatureToSign, secretKey).toString())
- */
-function generateHmacSignature(
-  method: string,
-  url: string,
-  body: string | undefined,
-  secretKey: string,
-): { authorization: string; date: string } {
-  const now = new Date().toUTCString();
-  let contentMD5 = "";
-  let contentType = "";
-
-  // Only compute MD5 and set content-type for POST/PUT with body
-  if (body && (method === "POST" || method === "PUT")) {
-    contentMD5 = crypto.createHash("md5").update(body).digest("hex");
-    contentType = "application/json";
-  }
-
-  // Build signature string according to Reftab API spec
-  // Format: METHOD\nContentMD5\nContentType\nDate\nURL
-  const signatureString = `${method}\n${contentMD5}\n${contentType}\n${now}\n${url}`;
-
-  // Generate HMAC-SHA256
-  const hmac = crypto.createHmac("sha256", secretKey);
-  hmac.update(signatureString);
-
-  // CryptoJS's btoa() on HmacSHA256 result converts the HEX STRING to base64
-  // So we need: base64(hex_string), not base64(binary_digest)
-  const hexDigest = hmac.digest("hex");
-  const signature = Buffer.from(hexDigest).toString("base64");
-
-  return {
-    authorization: signature,
-    date: now,
-  };
-}
 
 /**
  * Make authenticated request to Reftab API
@@ -63,48 +21,24 @@ async function makeReftabRequest(
   endpoint: string,
   body?: IDataObject,
 ): Promise<IDataObject | IDataObject[]> {
-  const credentials = await context.getCredentials("reftabApi");
-  const publicKey = credentials.publicKey as string;
-  const secretKey = credentials.secretKey as string;
   const baseUrl = "https://www.reftab.com/api";
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
 
-  // Construct full URL - ensure no double slashes
-  const cleanEndpoint = endpoint.startsWith("/") ? endpoint.slice(1) : endpoint;
-  const fullUrl = `${baseUrl}/${cleanEndpoint}`;
-
-  // Stringify body if present - this exact string is used for MD5 hash
-  const bodyString = body ? JSON.stringify(body) : undefined;
-
-  // Generate HMAC signature using the full URL
-  const { authorization, date } = generateHmacSignature(
-    method,
-    fullUrl,
-    bodyString,
-    secretKey,
-  );
-
-  // Build request options
   const options: IHttpRequestOptions = {
     method: method as "GET" | "POST" | "PUT" | "DELETE",
-    url: fullUrl,
-    headers: {
-      Authorization: `RT ${publicKey}:${authorization}`,
-      "x-rt-date": date,
-    },
-    ignoreHttpStatusErrors: true, // Don't throw on 4xx/5xx, let us handle it
-    returnFullResponse: true, // Get full response including status code
+    baseURL: baseUrl,
+    url: cleanEndpoint,
+    ignoreHttpStatusErrors: true,
+    returnFullResponse: true,
   };
 
-  // Add Content-Type and body for POST/PUT requests
-  if ((method === "POST" || method === "PUT") && bodyString) {
-    options.headers!["Content-Type"] = "application/json";
-    // Send the exact same string we used for MD5 hash
-    options.body = bodyString;
-    // Don't use json: true since we're sending a pre-serialized string
+  if ((method === "POST" || method === "PUT") && body) {
+    options.body = JSON.stringify(body);
+    options.headers = { "Content-Type": "application/json" };
   }
 
   try {
-    const fullResponse = (await context.helpers.httpRequest(options)) as {
+    const fullResponse = (await context.helpers.httpRequestWithAuthentication.call(context as IAllExecuteFunctions, "reftabApi", options)) as {
       body: unknown;
       headers: Record<string, string>;
       statusCode: number;
@@ -316,8 +250,9 @@ export class Reftab implements INodeType {
     defaults: {
       name: "Reftab",
     },
-    inputs: ["main"],
-    outputs: ["main"],
+    inputs: [NodeConnectionTypes.Main],
+    outputs: [NodeConnectionTypes.Main],
+    usableAsTool: true,
     credentials: [
       {
         name: "reftabApi",
@@ -340,16 +275,16 @@ export class Reftab implements INodeType {
             value: "assetMaintenance",
           },
           {
+            name: "Custom",
+            value: "custom",
+          },
+          {
             name: "Loan",
             value: "loan",
           },
           {
             name: "Reservation",
             value: "reservation",
-          },
-          {
-            name: "Custom",
-            value: "custom",
           },
         ],
         default: "asset",
@@ -1908,26 +1843,10 @@ export class Reftab implements INodeType {
         this: ILoadOptionsFunctions,
       ): Promise<INodePropertyOptions[]> {
         try {
-          const credentials = await this.getCredentials("reftabApi");
-          const publicKey = credentials.publicKey as string;
-          const secretKey = credentials.secretKey as string;
-          const url = "https://www.reftab.com/api/locations";
-          const method = "GET";
-          const now = new Date().toUTCString();
-
-          const signatureString = `${method}\n\n\n${now}\n${url}`;
-          const hmac = crypto.createHmac("sha256", secretKey);
-          hmac.update(signatureString);
-          const hexDigest = hmac.digest("hex");
-          const signature = Buffer.from(hexDigest).toString("base64");
-
-          const response = await this.helpers.httpRequest({
+          const response = await this.helpers.httpRequestWithAuthentication.call(this as IAllExecuteFunctions, "reftabApi", {
             method: "GET",
-            url,
-            headers: {
-              Authorization: `RT ${publicKey}:${signature}`,
-              "x-rt-date": now,
-            },
+            baseURL: "https://www.reftab.com/api",
+            url: "/locations",
           });
 
           // Flatten nested array if present and recursively get all locations including children
@@ -1976,26 +1895,10 @@ export class Reftab implements INodeType {
         this: ILoadOptionsFunctions,
       ): Promise<INodePropertyOptions[]> {
         try {
-          const credentials = await this.getCredentials("reftabApi");
-          const publicKey = credentials.publicKey as string;
-          const secretKey = credentials.secretKey as string;
-          const url = "https://www.reftab.com/api/categories";
-          const method = "GET";
-          const now = new Date().toUTCString();
-
-          const signatureString = `${method}\n\n\n${now}\n${url}`;
-          const hmac = crypto.createHmac("sha256", secretKey);
-          hmac.update(signatureString);
-          const hexDigest = hmac.digest("hex");
-          const signature = Buffer.from(hexDigest).toString("base64");
-
-          const response = await this.helpers.httpRequest({
+          const response = await this.helpers.httpRequestWithAuthentication.call(this as IAllExecuteFunctions, "reftabApi", {
             method: "GET",
-            url,
-            headers: {
-              Authorization: `RT ${publicKey}:${signature}`,
-              "x-rt-date": now,
-            },
+            baseURL: "https://www.reftab.com/api",
+            url: "/categories",
           });
 
           // Handle nested array structure [[...]]
@@ -2021,26 +1924,10 @@ export class Reftab implements INodeType {
         this: ILoadOptionsFunctions,
       ): Promise<INodePropertyOptions[]> {
         try {
-          const credentials = await this.getCredentials("reftabApi");
-          const publicKey = credentials.publicKey as string;
-          const secretKey = credentials.secretKey as string;
-          const url = "https://www.reftab.com/api/nextasset";
-          const method = "GET";
-          const now = new Date().toUTCString();
-
-          const signatureString = `${method}\n\n\n${now}\n${url}`;
-          const hmac = crypto.createHmac("sha256", secretKey);
-          hmac.update(signatureString);
-          const hexDigest = hmac.digest("hex");
-          const signature = Buffer.from(hexDigest).toString("base64");
-
-          const response = (await this.helpers.httpRequest({
+          const response = (await this.helpers.httpRequestWithAuthentication.call(this as IAllExecuteFunctions, "reftabApi", {
             method: "GET",
-            url,
-            headers: {
-              Authorization: `RT ${publicKey}:${signature}`,
-              "x-rt-date": now,
-            },
+            baseURL: "https://www.reftab.com/api",
+            url: "/nextasset",
           })) as Record<string, unknown>;
 
           const nextId = String(response.aid || response.id || "Unknown");
@@ -2053,26 +1940,10 @@ export class Reftab implements INodeType {
         this: ILoadOptionsFunctions,
       ): Promise<INodePropertyOptions[]> {
         try {
-          const credentials = await this.getCredentials("reftabApi");
-          const publicKey = credentials.publicKey as string;
-          const secretKey = credentials.secretKey as string;
-          const url = "https://www.reftab.com/api/status";
-          const method = "GET";
-          const now = new Date().toUTCString();
-
-          const signatureString = `${method}\n\n\n${now}\n${url}`;
-          const hmac = crypto.createHmac("sha256", secretKey);
-          hmac.update(signatureString);
-          const hexDigest = hmac.digest("hex");
-          const signature = Buffer.from(hexDigest).toString("base64");
-
-          const response = await this.helpers.httpRequest({
+          const response = await this.helpers.httpRequestWithAuthentication.call(this as IAllExecuteFunctions, "reftabApi", {
             method: "GET",
-            url,
-            headers: {
-              Authorization: `RT ${publicKey}:${signature}`,
-              "x-rt-date": now,
-            },
+            baseURL: "https://www.reftab.com/api",
+            url: "/status",
           });
 
           // Handle nested array structure [[...]]
@@ -2098,26 +1969,10 @@ export class Reftab implements INodeType {
         this: ILoadOptionsFunctions,
       ): Promise<INodePropertyOptions[]> {
         try {
-          const credentials = await this.getCredentials("reftabApi");
-          const publicKey = credentials.publicKey as string;
-          const secretKey = credentials.secretKey as string;
-          const url = "https://www.reftab.com/api/fields";
-          const method = "GET";
-          const now = new Date().toUTCString();
-
-          const signatureString = `${method}\n\n\n${now}\n${url}`;
-          const hmac = crypto.createHmac("sha256", secretKey);
-          hmac.update(signatureString);
-          const hexDigest = hmac.digest("hex");
-          const signature = Buffer.from(hexDigest).toString("base64");
-
-          const response = await this.helpers.httpRequest({
+          const response = await this.helpers.httpRequestWithAuthentication.call(this as IAllExecuteFunctions, "reftabApi", {
             method: "GET",
-            url,
-            headers: {
-              Authorization: `RT ${publicKey}:${signature}`,
-              "x-rt-date": now,
-            },
+            baseURL: "https://www.reftab.com/api",
+            url: "/fields",
           });
 
           // Handle nested array structure [[...]]
@@ -3021,7 +2876,14 @@ export class Reftab implements INodeType {
               "DELETE",
               `reservations/${reservationId}`,
             );
-            returnData.push({ json: responseData as IDataObject, pairedItem: { item: i } });
+            returnData.push({
+              json: {
+                success: true,
+                id: reservationId,
+                ...(responseData as IDataObject),
+              },
+              pairedItem: { item: i },
+            });
           } else if (operation === "fulfill") {
             const reservationId = this.getNodeParameter(
               "reservationId",
