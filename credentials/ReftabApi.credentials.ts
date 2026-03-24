@@ -16,6 +16,9 @@ export class ReftabApi implements ICredentialType {
 			displayName: 'Public Key',
 			name: 'publicKey',
 			type: 'string',
+			typeOptions: {
+				password: true,
+			},
 			default: '',
 			required: true,
 			description: 'Your Reftab API public key',
