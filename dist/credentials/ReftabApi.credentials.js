@@ -39,12 +39,16 @@ class ReftabApi {
     constructor() {
         this.name = 'reftabApi';
         this.displayName = 'Reftab API';
+        this.icon = 'file:reftab.svg';
         this.documentationUrl = 'https://reftab.com/api-docs';
         this.properties = [
             {
                 displayName: 'Public Key',
                 name: 'publicKey',
                 type: 'string',
+                typeOptions: {
+                    password: true,
+                },
                 default: '',
                 required: true,
                 description: 'Your Reftab API public key',
@@ -83,7 +87,7 @@ class ReftabApi {
             const bodyString = typeof requestOptions.body === 'string'
                 ? requestOptions.body
                 : JSON.stringify(requestOptions.body);
-            contentMD5 = crypto.createHash('md5').update(bodyString).digest('base64');
+            contentMD5 = crypto.createHash('md5').update(bodyString).digest('hex');
             contentType = 'application/json';
         }
         const signatureString = `${method}\n${contentMD5}\n${contentType}\n${now}\n${url}`;

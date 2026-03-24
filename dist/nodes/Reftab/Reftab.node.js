@@ -1,84 +1,23 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Reftab = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
-const crypto = __importStar(require("crypto"));
-function generateHmacSignature(method, url, body, secretKey) {
-    const now = new Date().toUTCString();
-    let contentMD5 = "";
-    let contentType = "";
-    if (body && (method === "POST" || method === "PUT")) {
-        contentMD5 = crypto.createHash("md5").update(body).digest("hex");
-        contentType = "application/json";
-    }
-    const signatureString = `${method}\n${contentMD5}\n${contentType}\n${now}\n${url}`;
-    const hmac = crypto.createHmac("sha256", secretKey);
-    hmac.update(signatureString);
-    const hexDigest = hmac.digest("hex");
-    const signature = Buffer.from(hexDigest).toString("base64");
-    return {
-        authorization: signature,
-        date: now,
-    };
-}
 async function makeReftabRequest(context, method, endpoint, body) {
-    const credentials = await context.getCredentials("reftabApi");
-    const publicKey = credentials.publicKey;
-    const secretKey = credentials.secretKey;
     const baseUrl = "https://www.reftab.com/api";
-    const cleanEndpoint = endpoint.startsWith("/") ? endpoint.slice(1) : endpoint;
-    const fullUrl = `${baseUrl}/${cleanEndpoint}`;
-    const bodyString = body ? JSON.stringify(body) : undefined;
-    const { authorization, date } = generateHmacSignature(method, fullUrl, bodyString, secretKey);
+    const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
     const options = {
         method: method,
-        url: fullUrl,
-        headers: {
-            Authorization: `RT ${publicKey}:${authorization}`,
-            "x-rt-date": date,
-        },
+        baseURL: baseUrl,
+        url: cleanEndpoint,
         ignoreHttpStatusErrors: true,
         returnFullResponse: true,
     };
-    if ((method === "POST" || method === "PUT") && bodyString) {
-        options.headers["Content-Type"] = "application/json";
-        options.body = bodyString;
+    if ((method === "POST" || method === "PUT") && body) {
+        options.body = JSON.stringify(body);
+        options.headers = { "Content-Type": "application/json" };
     }
     try {
-        const fullResponse = (await context.helpers.httpRequest(options));
+        const fullResponse = (await context.helpers.httpRequestWithAuthentication.call(context, "reftabApi", options));
         if (fullResponse.statusCode >= 400) {
             let errorMessage = "";
             const body = fullResponse.body;
@@ -104,7 +43,7 @@ async function makeReftabRequest(context, method, endpoint, body) {
                     bodyObj.reason ||
                     JSON.stringify(body));
             }
-            throw new Error(`Reftab API Error (${fullResponse.statusCode}): ${errorMessage || "Request failed"}`);
+            throw new n8n_workflow_1.NodeOperationError(context.getNode(), `Reftab API Error (${fullResponse.statusCode}): ${errorMessage || "Request failed"}`);
         }
         const responseBody = fullResponse.body;
         if (typeof responseBody === "string") {
@@ -124,7 +63,7 @@ async function makeReftabRequest(context, method, endpoint, body) {
         }
         const anyError = error;
         const message = anyError.message || "Unknown error occurred";
-        throw new Error(`Reftab API Error: ${message}`);
+        throw new n8n_workflow_1.NodeOperationError(context.getNode(), `Reftab API Error: ${message}`);
     }
 }
 function deepMerge(target, source) {
@@ -169,7 +108,7 @@ async function lookupLoaneeByEmail(context, email) {
             }
         }
     }
-    throw new Error(`Loanee with email "${email}" not found`);
+    throw new n8n_workflow_1.NodeOperationError(context.getNode(), `Loanee with email "${email}" not found`);
 }
 async function lookupUserByEmail(context, email) {
     const response = await makeReftabRequest(context, "GET", `loanees?q=${encodeURIComponent(email)}&limit=50`);
@@ -188,7 +127,7 @@ async function lookupUserByEmail(context, email) {
             }
         }
     }
-    throw new Error(`User with email "${email}" not found. Note: Only Reftab users (not external loanees) can be assigned to maintenance.`);
+    throw new n8n_workflow_1.NodeOperationError(context.getNode(), `User with email "${email}" not found. Note: Only Reftab users (not external loanees) can be assigned to maintenance.`);
 }
 class Reftab {
     constructor() {
@@ -203,8 +142,9 @@ class Reftab {
             defaults: {
                 name: "Reftab",
             },
-            inputs: ["main"],
-            outputs: ["main"],
+            inputs: [n8n_workflow_1.NodeConnectionTypes.Main],
+            outputs: [n8n_workflow_1.NodeConnectionTypes.Main],
+            usableAsTool: true,
             credentials: [
                 {
                     name: "reftabApi",
@@ -227,16 +167,16 @@ class Reftab {
                             value: "assetMaintenance",
                         },
                         {
+                            name: "Custom",
+                            value: "custom",
+                        },
+                        {
                             name: "Loan",
                             value: "loan",
                         },
                         {
                             name: "Reservation",
                             value: "reservation",
-                        },
-                        {
-                            name: "Custom",
-                            value: "custom",
                         },
                     ],
                     default: "asset",
@@ -1756,24 +1696,10 @@ class Reftab {
             loadOptions: {
                 async getLocations() {
                     try {
-                        const credentials = await this.getCredentials("reftabApi");
-                        const publicKey = credentials.publicKey;
-                        const secretKey = credentials.secretKey;
-                        const url = "https://www.reftab.com/api/locations";
-                        const method = "GET";
-                        const now = new Date().toUTCString();
-                        const signatureString = `${method}\n\n\n${now}\n${url}`;
-                        const hmac = crypto.createHmac("sha256", secretKey);
-                        hmac.update(signatureString);
-                        const hexDigest = hmac.digest("hex");
-                        const signature = Buffer.from(hexDigest).toString("base64");
-                        const response = await this.helpers.httpRequest({
+                        const response = await this.helpers.httpRequestWithAuthentication.call(this, "reftabApi", {
                             method: "GET",
-                            url,
-                            headers: {
-                                Authorization: `RT ${publicKey}:${signature}`,
-                                "x-rt-date": now,
-                            },
+                            baseURL: "https://www.reftab.com/api",
+                            url: "/locations",
                         });
                         const flattenLocations = (items, prefix = "") => {
                             const result = [];
@@ -1805,24 +1731,10 @@ class Reftab {
                 },
                 async getCategories() {
                     try {
-                        const credentials = await this.getCredentials("reftabApi");
-                        const publicKey = credentials.publicKey;
-                        const secretKey = credentials.secretKey;
-                        const url = "https://www.reftab.com/api/categories";
-                        const method = "GET";
-                        const now = new Date().toUTCString();
-                        const signatureString = `${method}\n\n\n${now}\n${url}`;
-                        const hmac = crypto.createHmac("sha256", secretKey);
-                        hmac.update(signatureString);
-                        const hexDigest = hmac.digest("hex");
-                        const signature = Buffer.from(hexDigest).toString("base64");
-                        const response = await this.helpers.httpRequest({
+                        const response = await this.helpers.httpRequestWithAuthentication.call(this, "reftabApi", {
                             method: "GET",
-                            url,
-                            headers: {
-                                Authorization: `RT ${publicKey}:${signature}`,
-                                "x-rt-date": now,
-                            },
+                            baseURL: "https://www.reftab.com/api",
+                            url: "/categories",
                         });
                         let categories = response;
                         if (Array.isArray(response) &&
@@ -1842,24 +1754,10 @@ class Reftab {
                 },
                 async getNextAssetId() {
                     try {
-                        const credentials = await this.getCredentials("reftabApi");
-                        const publicKey = credentials.publicKey;
-                        const secretKey = credentials.secretKey;
-                        const url = "https://www.reftab.com/api/nextasset";
-                        const method = "GET";
-                        const now = new Date().toUTCString();
-                        const signatureString = `${method}\n\n\n${now}\n${url}`;
-                        const hmac = crypto.createHmac("sha256", secretKey);
-                        hmac.update(signatureString);
-                        const hexDigest = hmac.digest("hex");
-                        const signature = Buffer.from(hexDigest).toString("base64");
-                        const response = (await this.helpers.httpRequest({
+                        const response = (await this.helpers.httpRequestWithAuthentication.call(this, "reftabApi", {
                             method: "GET",
-                            url,
-                            headers: {
-                                Authorization: `RT ${publicKey}:${signature}`,
-                                "x-rt-date": now,
-                            },
+                            baseURL: "https://www.reftab.com/api",
+                            url: "/nextasset",
                         }));
                         const nextId = String(response.aid || response.id || "Unknown");
                         return [{ name: `Next generated ID: ${nextId}`, value: "" }];
@@ -1870,24 +1768,10 @@ class Reftab {
                 },
                 async getStatuses() {
                     try {
-                        const credentials = await this.getCredentials("reftabApi");
-                        const publicKey = credentials.publicKey;
-                        const secretKey = credentials.secretKey;
-                        const url = "https://www.reftab.com/api/status";
-                        const method = "GET";
-                        const now = new Date().toUTCString();
-                        const signatureString = `${method}\n\n\n${now}\n${url}`;
-                        const hmac = crypto.createHmac("sha256", secretKey);
-                        hmac.update(signatureString);
-                        const hexDigest = hmac.digest("hex");
-                        const signature = Buffer.from(hexDigest).toString("base64");
-                        const response = await this.helpers.httpRequest({
+                        const response = await this.helpers.httpRequestWithAuthentication.call(this, "reftabApi", {
                             method: "GET",
-                            url,
-                            headers: {
-                                Authorization: `RT ${publicKey}:${signature}`,
-                                "x-rt-date": now,
-                            },
+                            baseURL: "https://www.reftab.com/api",
+                            url: "/status",
                         });
                         let statuses = response;
                         if (Array.isArray(response) &&
@@ -1907,24 +1791,10 @@ class Reftab {
                 },
                 async getFields() {
                     try {
-                        const credentials = await this.getCredentials("reftabApi");
-                        const publicKey = credentials.publicKey;
-                        const secretKey = credentials.secretKey;
-                        const url = "https://www.reftab.com/api/fields";
-                        const method = "GET";
-                        const now = new Date().toUTCString();
-                        const signatureString = `${method}\n\n\n${now}\n${url}`;
-                        const hmac = crypto.createHmac("sha256", secretKey);
-                        hmac.update(signatureString);
-                        const hexDigest = hmac.digest("hex");
-                        const signature = Buffer.from(hexDigest).toString("base64");
-                        const response = await this.helpers.httpRequest({
+                        const response = await this.helpers.httpRequestWithAuthentication.call(this, "reftabApi", {
                             method: "GET",
-                            url,
-                            headers: {
-                                Authorization: `RT ${publicKey}:${signature}`,
-                                "x-rt-date": now,
-                            },
+                            baseURL: "https://www.reftab.com/api",
+                            url: "/fields",
                         });
                         let fields = response;
                         if (Array.isArray(response) &&
@@ -1956,7 +1826,7 @@ class Reftab {
                     if (operation === "get") {
                         const assetId = this.getNodeParameter("assetId", i);
                         const responseData = await makeReftabRequest(this, "GET", `assets/${assetId}`);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === "getAll") {
                         const limit = this.getNodeParameter("limit", i);
@@ -2007,7 +1877,7 @@ class Reftab {
                             ? responseData
                             : [responseData];
                         for (const asset of assets) {
-                            returnData.push({ json: asset });
+                            returnData.push({ json: asset, pairedItem: { item: i } });
                         }
                     }
                     else if (operation === "create") {
@@ -2036,7 +1906,7 @@ class Reftab {
                             body.aid = newAssetId;
                         }
                         const responseData = await makeReftabRequest(this, "POST", "assets", body);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === "update") {
                         const assetId = this.getNodeParameter("assetId", i);
@@ -2049,7 +1919,7 @@ class Reftab {
                             throw new n8n_workflow_1.NodeOperationError(this.getNode(), "Invalid JSON in Asset Data field", { itemIndex: i });
                         }
                         const responseData = await makeReftabPutRequest(this, `assets/${assetId}`, updates);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === "delete") {
                         const assetId = this.getNodeParameter("assetId", i);
@@ -2060,6 +1930,7 @@ class Reftab {
                                 id: assetId,
                                 ...responseData,
                             },
+                            pairedItem: { item: i },
                         });
                     }
                 }
@@ -2067,7 +1938,7 @@ class Reftab {
                     if (operation === "get") {
                         const maintenanceId = this.getNodeParameter("maintenanceId", i);
                         const responseData = await makeReftabRequest(this, "GET", `assetmaintenance/${maintenanceId}`);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === "getAll") {
                         const limit = this.getNodeParameter("maintenanceLimit", i);
@@ -2123,7 +1994,7 @@ class Reftab {
                             ? maintenances
                             : [maintenances];
                         for (const maintenance of maintenanceArray) {
-                            returnData.push({ json: maintenance });
+                            returnData.push({ json: maintenance, pairedItem: { item: i } });
                         }
                     }
                     else if (operation === "create") {
@@ -2155,14 +2026,14 @@ class Reftab {
                             }
                         }
                         const responseData = await makeReftabRequest(this, "POST", `assets/${assetId}/maintenance`, body);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                 }
                 else if (resource === "loan") {
                     if (operation === "get") {
                         const loanId = this.getNodeParameter("loanId", i);
                         const responseData = await makeReftabRequest(this, "GET", `loans/${loanId}`);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === "getAll") {
                         const limit = this.getNodeParameter("loanLimit", i);
@@ -2252,7 +2123,7 @@ class Reftab {
                         }
                         const loanArray = Array.isArray(loans) ? loans : [loans];
                         for (const loan of loanArray) {
-                            returnData.push({ json: loan });
+                            returnData.push({ json: loan, pairedItem: { item: i } });
                         }
                     }
                     else if (operation === "create") {
@@ -2297,7 +2168,7 @@ class Reftab {
                             }
                         }
                         const responseData = await makeReftabRequest(this, "POST", "loans", body);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === "update") {
                         const loanId = this.getNodeParameter("loanId", i);
@@ -2316,7 +2187,7 @@ class Reftab {
                             body.clid = parseInt(String(updateFields.clid), 10);
                         }
                         const responseData = await makeReftabRequest(this, "PUT", `loans/${loanId}`, body);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === "checkIn") {
                         const loanId = this.getNodeParameter("loanId", i);
@@ -2332,14 +2203,14 @@ class Reftab {
                             body.notes = checkInNotes;
                         }
                         const responseData = await makeReftabRequest(this, "PUT", `loans/${loanId}`, body);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                 }
                 else if (resource === "reservation") {
                     if (operation === "get") {
                         const reservationId = this.getNodeParameter("reservationId", i);
                         const responseData = await makeReftabRequest(this, "GET", `reservations/${reservationId}`);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === "getAll") {
                         const limit = this.getNodeParameter("reservationLimit", i);
@@ -2420,7 +2291,7 @@ class Reftab {
                             ? reservations
                             : [reservations];
                         for (const reservation of reservationArray) {
-                            returnData.push({ json: reservation });
+                            returnData.push({ json: reservation, pairedItem: { item: i } });
                         }
                     }
                     else if (operation === "create") {
@@ -2460,7 +2331,7 @@ class Reftab {
                             }
                         }
                         const responseData = await makeReftabRequest(this, "POST", "reservations", body);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === "update") {
                         const reservationId = this.getNodeParameter("reservationId", i);
@@ -2479,12 +2350,19 @@ class Reftab {
                             body.notes = updateFields.notes;
                         }
                         const responseData = await makeReftabRequest(this, "PUT", `reservations/${reservationId}`, body);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === "delete") {
                         const reservationId = this.getNodeParameter("reservationId", i);
                         const responseData = await makeReftabRequest(this, "DELETE", `reservations/${reservationId}`);
-                        returnData.push({ json: responseData });
+                        returnData.push({
+                            json: {
+                                success: true,
+                                id: reservationId,
+                                ...responseData,
+                            },
+                            pairedItem: { item: i },
+                        });
                     }
                     else if (operation === "fulfill") {
                         const reservationId = this.getNodeParameter("reservationId", i);
@@ -2501,7 +2379,7 @@ class Reftab {
                             }
                         }
                         const responseData = await makeReftabRequest(this, "PUT", `reservations/${reservationId}`, body);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                 }
                 else if (resource === "custom") {
@@ -2533,7 +2411,7 @@ class Reftab {
                     else {
                         responseData = await makeReftabRequest(this, method, fullEndpoint, body);
                     }
-                    returnData.push({ json: responseData });
+                    returnData.push({ json: responseData, pairedItem: { item: i } });
                 }
             }
             catch (error) {
