@@ -42,12 +42,12 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^25.5.0",
+    "@types/node": "^26.6.6",
     "eslint": "^10.1.0",
     "gulp": "^5.0.1",
-    "n8n-workflow": "~2.46.5",
+    "n8n-workflow": "~3.0.1",
     "prettier": "^3.7.3",
-    "typescript": "~5.9.3",
+    "typescript": "~7.0.2",
     "typescript-eslint": "^8.48.0"
   },
   "peerDependencies": {
